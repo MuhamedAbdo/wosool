@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:intl/intl.dart';
 import '../models/attendance.dart';
+import '../widgets/custom_app_bar.dart'; // تأكد من استيراد الـ Widget المخصص
 
 class EditRecordScreen extends StatefulWidget {
   const EditRecordScreen({super.key});
@@ -11,229 +10,211 @@ class EditRecordScreen extends StatefulWidget {
 }
 
 class _EditRecordScreenState extends State<EditRecordScreen> {
-  late dynamic recordKey;
-  late DailyRecord oldRecord;
-  Map<String, double> updatedStatuses = {};
+  late DailyRecord record;
+  late Map<String, Map<String, bool>> editableStatus;
   bool isInitialized = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!isInitialized) {
-      final args =
-          ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-      recordKey = args['key'];
-      oldRecord = args['record'];
-      updatedStatuses = Map<String, double>.from(oldRecord.workersStatus);
+      record = ModalRoute.of(context)!.settings.arguments as DailyRecord;
+
+      // تحويل القيم الرقمية المخزنة إلى نظام الأزرار (ذهاب/عودة)
+      editableStatus = {};
+      record.workersStatus.forEach((name, value) {
+        editableStatus[name] = {
+          "am": value >= 0.5, // إذا كان 0.5 أو 1.0 يعتبر ذهاب
+          "pm": value == 1.0, // إذا كان 1.0 يعتبر ذهاب وعودة
+        };
+      });
       isInitialized = true;
     }
-  }
-
-  // حساب الإجمالي بناءً على السعر وقت التسجيل
-  double _calculateTotal() {
-    double totalTrips = updatedStatuses.values.fold(0.0, (a, b) => a + b);
-    return totalTrips * oldRecord.priceAtTime;
-  }
-
-  void _addTemporaryWorker() {
-    TextEditingController tempNameCtrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("إضافة عامل للسجل"),
-        content: TextField(
-          controller: tempNameCtrl,
-          decoration: const InputDecoration(hintText: "اسم العامل"),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("إلغاء"),
-          ),
-          TextButton(
-            onPressed: () {
-              if (tempNameCtrl.text.isNotEmpty) {
-                setState(
-                  () => updatedStatuses[tempNameCtrl.text] = 1.0,
-                ); // القيمة الافتراضية 1
-                Navigator.pop(context);
-              }
-            },
-            child: const Text("إضافة"),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FD),
-      appBar: AppBar(
-        title: const Text(
-          "تعديل البيانات",
-          style: TextStyle(fontWeight: FontWeight.bold),
+      // --- استخدام الـ AppBar المخصص الجديد ---
+      appBar: CustomWosoolAppBar(
+        title: "تعديل الحضور",
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new,
+            color: Colors.white,
+            size: 22,
+          ),
+          onPressed: () => Navigator.pop(context),
         ),
-        centerTitle: true,
         actions: [
           IconButton(
-            onPressed: _addTemporaryWorker,
-            icon: const Icon(Icons.person_add_alt_1, color: Colors.orange),
+            icon: const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+              size: 28,
+            ),
+            onPressed: _saveChanges,
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: Column(
         children: [
+          // شريط عرض التاريخ بشكل منسق
           Container(
+            width: double.infinity,
             margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.blueAccent.withOpacity(0.1),
+              color: const Color(0xFF4A80F0).withOpacity(0.1),
               borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: const Color(0xFF4A80F0).withOpacity(0.2),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Icon(
-                  Icons.event_note,
-                  color: Colors.blueAccent,
+                  Icons.edit_calendar,
+                  color: Color(0xFF4A80F0),
                   size: 20,
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  "تعديل سجل: ${DateFormat('yyyy-MM-dd').format(oldRecord.date)}",
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  "سجل يوم: ${record.date.year}-${record.date.month}-${record.date.day}",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Color(0xFF2D3142),
+                  ),
                 ),
               ],
             ),
           ),
           Expanded(
             child: ListView.builder(
-              itemCount: updatedStatuses.length,
+              padding: const EdgeInsets.only(bottom: 20),
+              itemCount: editableStatus.length,
               itemBuilder: (context, index) {
-                String name = updatedStatuses.keys.elementAt(index);
-                double status = updatedStatuses[name]!;
-                return Container(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.02),
-                        blurRadius: 10,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      Row(
-                        children: [1.0, 0.5, 0.0]
-                            .map(
-                              (val) => Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 2,
-                                ),
-                                child: ChoiceChip(
-                                  label: Text(val.toString()),
-                                  selected: status == val,
-                                  selectedColor: Colors.blueAccent,
-                                  onSelected: (_) => setState(
-                                    () => updatedStatuses[name] = val,
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.remove_circle_outline,
-                          color: Colors.redAccent,
-                          size: 20,
-                        ),
-                        onPressed: () =>
-                            setState(() => updatedStatuses.remove(name)),
-                      ),
-                    ],
-                  ),
-                );
+                String name = editableStatus.keys.elementAt(index);
+                return _buildEditWorkerCard(name);
               },
             ),
           ),
-          // البانل السفلي كما في الصفحة الرئيسية
-          _buildBottomPanel(),
         ],
       ),
     );
   }
 
-  Widget _buildBottomPanel() {
-    double total = _calculateTotal();
+  Widget _buildEditWorkerCard(String name) {
+    bool am = editableStatus[name]!["am"]!;
+    bool pm = editableStatus[name]!["pm"]!;
+
     return Container(
-      padding: const EdgeInsets.all(25),
-      decoration: const BoxDecoration(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20)],
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
+        ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Text(
-            "الإجمالي المعدل: ${total.toStringAsFixed(2)} جنيه",
-            style: const TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.bold,
-              color: Colors.blueAccent,
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Color(0xFF2D3142),
+              ),
             ),
           ),
-          const SizedBox(height: 15),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orangeAccent,
-              minimumSize: const Size(double.infinity, 55),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-            ),
-            onPressed: () {
-              final box = Hive.box<DailyRecord>('attendance');
-              box.put(
-                recordKey,
-                DailyRecord(
-                  date: oldRecord.date,
-                  workersStatus: updatedStatuses,
-                  priceAtTime: oldRecord.priceAtTime,
-                ),
-              );
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("تم التحديث وحفظ التعديلات")),
-              );
-              Navigator.pop(context);
-            },
-            child: const Text(
-              "حفظ التعديلات",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          _tripButton(
+            label: "ذهاب",
+            icon: Icons.wb_sunny_outlined,
+            isSelected: am,
+            color: Colors.amber.shade700,
+            onTap: () => setState(() => editableStatus[name]!["am"] = !am),
+          ),
+          const SizedBox(width: 10),
+          _tripButton(
+            label: "عودة",
+            icon: Icons.nightlight_round_outlined,
+            isSelected: pm,
+            color: Colors.indigo.shade700,
+            onTap: () => setState(() => editableStatus[name]!["pm"] = !pm),
           ),
         ],
       ),
     );
+  }
+
+  Widget _tripButton({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? color : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : Colors.grey,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _saveChanges() {
+    // تحديث البيانات في الكائن الحالي
+    record.workersStatus.clear();
+
+    editableStatus.forEach((name, status) {
+      double val = 0;
+      if (status["am"] == true) val += 0.5;
+      if (status["pm"] == true) val += 0.5;
+      record.workersStatus[name] = val;
+    });
+
+    // حفظ التغييرات في Hive
+    record.save();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("تم تحديث السجل بنجاح", textAlign: TextAlign.center),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(20),
+      ),
+    );
+    Navigator.pop(context);
   }
 }
