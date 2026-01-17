@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:provider/provider.dart';
 import 'dart:async'; // مطلوب للـ Timer في شاشة الـ Splash
 
 // استيراد الموديلات والشاشات
@@ -9,6 +10,7 @@ import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/edit_record_screen.dart';
+import 'providers/theme_provider.dart';
 
 void main() async {
   // التأكد من تهيئة كل إضافات النظام قبل تشغيل التطبيق
@@ -37,24 +39,29 @@ class WosoolApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'وُصول',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.blueAccent,
-        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
-        // يمكنك إضافة خط عربي هنا إذا كان متوفراً في الـ assets
+    return ChangeNotifierProvider(
+      create: (context) => ThemeProvider(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, child) {
+          return MaterialApp(
+            title: 'وُصول',
+            debugShowCheckedModeBanner: false,
+            theme: themeProvider.lightTheme,
+            darkTheme: themeProvider.darkTheme,
+            themeMode:
+                themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            // نقطة الانطلاق هي شاشة الـ Splash
+            initialRoute: '/',
+            routes: {
+              '/': (context) => const SplashScreen(),
+              '/home': (context) => const HomeScreen(),
+              '/settings': (context) => const SettingsScreen(),
+              '/reports': (context) => const ReportsScreen(),
+              '/edit': (context) => const EditRecordScreen(),
+            },
+          );
+        },
       ),
-      // نقطة الانطلاق هي شاشة الـ Splash
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const SplashScreen(),
-        '/home': (context) => const HomeScreen(),
-        '/settings': (context) => const SettingsScreen(),
-        '/reports': (context) => const ReportsScreen(),
-        '/edit': (context) => const EditRecordScreen(),
-      },
     );
   }
 }

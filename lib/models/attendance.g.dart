@@ -20,19 +20,22 @@ class DailyRecordAdapter extends TypeAdapter<DailyRecord> {
       date: fields[0] as DateTime,
       workersStatus: (fields[1] as Map).cast<String, double>(),
       priceAtTime: fields[2] as double,
+      driverName: fields[3] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, DailyRecord obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(4)
       ..writeByte(0)
       ..write(obj.date)
       ..writeByte(1)
       ..write(obj.workersStatus)
       ..writeByte(2)
-      ..write(obj.priceAtTime);
+      ..write(obj.priceAtTime)
+      ..writeByte(3)
+      ..write(obj.driverName);
   }
 
   @override

@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart' as intl;
@@ -7,6 +9,9 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
+
+import 'package:universal_html/html.dart' as html;
+
 import '../models/attendance.dart';
 import '../widgets/custom_app_bar.dart';
 
@@ -34,24 +39,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final records = _getFilteredRecords();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: CustomWosoolAppBar(
         title: "التقارير الشهرية",
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new,
-            color: Colors.white,
-            size: 22,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: Colors.white, size: 22),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
-            icon: const Icon(
-              Icons.picture_as_pdf,
-              color: Colors.white,
-              size: 26,
-            ),
+            icon:
+                const Icon(Icons.picture_as_pdf, color: Colors.white, size: 26),
             onPressed:
                 records.isEmpty ? null : () => _generateAndSharePdf(records),
           ),
@@ -67,10 +66,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 : ListView.builder(
                     padding: const EdgeInsets.all(12),
                     itemCount: records.length,
-                    itemBuilder: (context, index) {
-                      final record = records[index];
-                      return _buildRecordCard(record);
-                    },
+                    itemBuilder: (context, index) =>
+                        _buildRecordCard(records[index]),
                   ),
           ),
         ],
@@ -80,52 +77,76 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   Widget _buildRecordCard(DailyRecord record) {
     double dailyTotal = 0;
-    for (var val in record.workersStatus.values) {
-      dailyTotal += (val * record.priceAtTime);
-    }
+    double effectiveCount = 0;
+    record.workersStatus.forEach((name, value) {
+      dailyTotal += (value * record.priceAtTime);
+      effectiveCount += value;
+    });
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
         ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         title: Text(
           intl.DateFormat('EEEE, d MMMM', 'ar').format(record.date),
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2D3142),
-          ),
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          "عدد العمال: ${record.workersStatus.length}  |  المبلغ: ${dailyTotal.toStringAsFixed(1)} ج.م",
-          style: const TextStyle(fontSize: 13),
-        ),
+            "الحضور الفعلي: ${effectiveCount.toStringAsFixed(1)} عامل | المبلغ: ${dailyTotal.toStringAsFixed(1)} ج.م"),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
               icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
-              onPressed: () => Navigator.pushNamed(
-                context,
-                '/edit',
-                arguments: record,
-              ).then((_) => setState(() {})),
+              onPressed: () {
+                Navigator.pushNamed(context, '/edit', arguments: record)
+                    .then((_) => setState(() {}));
+              },
             ),
             IconButton(
-              icon: const Icon(
-                Icons.delete_sweep_outlined,
-                color: Colors.redAccent,
-              ),
+              icon: const Icon(Icons.delete_sweep_outlined,
+                  color: Colors.redAccent),
               onPressed: () => _confirmDelete(record),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMonthPicker() {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left, color: Colors.blueAccent),
+            onPressed: () => setState(() => selectedMonth =
+                DateTime(selectedMonth.year, selectedMonth.month - 1)),
+          ),
+          Text(
+            intl.DateFormat('MMMM yyyy', 'ar').format(selectedMonth),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right, color: Colors.blueAccent),
+            onPressed: () => setState(() => selectedMonth =
+                DateTime(selectedMonth.year, selectedMonth.month + 1)),
+          ),
+        ],
       ),
     );
   }
@@ -135,15 +156,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("حذف السجل", textAlign: TextAlign.right),
-        content: const Text(
-          "هل أنت متأكد من حذف سجل هذا اليوم نهائياً؟",
-          textAlign: TextAlign.right,
-        ),
+        content: const Text("هل أنت متأكد من حذف هذا السجل نهائياً؟",
+            textAlign: TextAlign.right),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("إلغاء"),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("إلغاء")),
           TextButton(
             onPressed: () {
               record.delete();
@@ -157,159 +175,101 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _buildMonthPicker() {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFF4A80F0).withOpacity(0.2)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left, color: Color(0xFF4A80F0)),
-            onPressed: () => setState(
-              () => selectedMonth = DateTime(
-                selectedMonth.year,
-                selectedMonth.month - 1,
-              ),
-            ),
-          ),
-          Text(
-            intl.DateFormat('MMMM yyyy', 'ar').format(selectedMonth),
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF4A80F0),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right, color: Color(0xFF4A80F0)),
-            onPressed: () => setState(
-              () => selectedMonth = DateTime(
-                selectedMonth.year,
-                selectedMonth.month + 1,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- وظيفة إنشاء ومشاركة ملف PDF تدعم الخط العادي والعريض مع عكس اتجاه الجدول ---
   Future<void> _generateAndSharePdf(List<DailyRecord> records) async {
-    final pdf = pw.Document();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
 
-    // 1. تحميل الخط العربي العادي
-    final fontData = await rootBundle.load("assets/fonts/Amiri-Regular.ttf");
-    final ttfRegular = pw.Font.ttf(fontData);
+    try {
+      final pdf = pw.Document();
+      // تحميل الخط العادي والخط العريض بشكل منفصل
+      final fontData = await rootBundle.load("assets/fonts/Amiri-Regular.ttf");
+      final boldFontData = await rootBundle.load("assets/fonts/Amiri-Bold.ttf");
+      final ttfRegular = pw.Font.ttf(fontData);
+      final ttfBold = pw.Font.ttf(boldFontData);
 
-    // 2. تحميل الخط العربي العريض (Bold)
-    final boldFontData = await rootBundle.load("assets/fonts/Amiri-Bold.ttf");
-    final ttfBold = pw.Font.ttf(boldFontData);
+      double monthlyTotalMoney = 0;
+      double monthlyTotalAttendance = 0;
 
-    double monthlyTotalMoney = 0;
-    double monthlyTotalAttendance = 0;
+      List<List<String>> tableData = records.map((r) {
+        double att = 0;
+        r.workersStatus.values.forEach((v) => att += v);
+        double money = att * r.priceAtTime;
+        monthlyTotalAttendance += att;
+        monthlyTotalMoney += money;
+        return [
+          "${money.toStringAsFixed(1)} ج.م",
+          r.driverName,
+          att.toStringAsFixed(1),
+          intl.DateFormat('yyyy/MM/dd').format(r.date),
+        ];
+      }).toList();
 
-    // تجهيز بيانات الجدول بترتيب عكسي (من اليمين لليسار)
-    List<List<String>> tableData = [];
-    for (int i = 0; i < records.length; i++) {
-      var r = records[i];
-      double dailyAttendance = 0;
-      for (var v in r.workersStatus.values) {
-        dailyAttendance += v;
-      }
-      double dailyMoney = dailyAttendance * r.priceAtTime;
-
-      monthlyTotalAttendance += dailyAttendance;
-      monthlyTotalMoney += dailyMoney;
-
-      tableData.add([
-        "${dailyMoney.toStringAsFixed(1)} ج.م", // مبلغ النقل (أصبح في اليسار برمجياً ليظهر يمين الورقة)
-        r.workersStatus.length.toString(), // عدد العمال
-        intl.DateFormat('yyyy/MM/dd').format(r.date), // التاريخ
-        (i + 1).toString(), // التسلسل (م)
-      ]);
-    }
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        theme: pw.ThemeData.withFont(
-          base: ttfRegular,
-          bold: ttfBold,
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          // تعريف الثيم بوجود الخطين العادي والعريض
+          theme: pw.ThemeData.withFont(base: ttfRegular, bold: ttfBold),
+          textDirection: pw.TextDirection.rtl,
+          build: (context) => [
+            pw.Center(
+                child: pw.Text(
+                    "تقرير وصول - ${intl.DateFormat('MMMM yyyy', 'ar').format(selectedMonth)}",
+                    style: pw.TextStyle(fontSize: 20, font: ttfBold))),
+            pw.SizedBox(height: 20),
+            pw.TableHelper.fromTextArray(
+              headers: ["المبلغ", "السائق", "الحضور", "التاريخ"],
+              data: tableData,
+              headerDecoration:
+                  const pw.BoxDecoration(color: PdfColors.blueAccent),
+              headerStyle: pw.TextStyle(color: PdfColors.white, font: ttfBold),
+              cellStyle: pw.TextStyle(font: ttfRegular),
+              cellAlignment: pw.Alignment.center,
+            ),
+            pw.SizedBox(height: 20),
+            pw.Divider(),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                // تحديد الخط بشكل صريح لكل نص لتجنب المربعات
+                pw.Text(
+                    "إجمالي الحضور: ${monthlyTotalAttendance.toStringAsFixed(1)}",
+                    style: pw.TextStyle(font: ttfBold, fontSize: 14)),
+                pw.Text(
+                    "إجمالي المبلغ: ${monthlyTotalMoney.toStringAsFixed(1)} ج.م",
+                    style: pw.TextStyle(
+                        font: ttfBold,
+                        fontSize: 14,
+                        color: PdfColors.blueAccent)),
+              ],
+            ),
+          ],
         ),
-        textDirection: pw.TextDirection.rtl,
-        build: (context) => [
-          pw.Center(
-            child: pw.Text(
-              "تقرير حضور وانتقالات وصول",
-              style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
-            ),
-          ),
-          pw.Center(
-            child: pw.Text(
-              "لشهر: ${intl.DateFormat('MMMM yyyy', 'ar').format(selectedMonth)}",
-              style: const pw.TextStyle(fontSize: 16),
-            ),
-          ),
-          pw.SizedBox(height: 20),
-          pw.TableHelper.fromTextArray(
-            // الرؤوس بترتيب معكوس لتظهر من اليمين (م هي أقصى اليمين)
-            headers: ["مبلغ النقل اليومي", "عدد العمال", "التاريخ", "م"],
-            data: tableData,
-            headerStyle: pw.TextStyle(
-              fontWeight: pw.FontWeight.bold,
-              color: PdfColors.white,
-            ),
-            headerDecoration: const pw.BoxDecoration(
-              color: PdfColors.blueAccent,
-            ),
-            cellAlignment: pw.Alignment.center,
-            // تحديد عرض الأعمدة حسب الترتيب الجديد (0 هو العمود الأول من جهة اليمين في العرض)
-            columnWidths: {
-              3: const pw.FixedColumnWidth(30), // عمود "م"
-              2: const pw.FlexColumnWidth(), // عمود "التاريخ"
-              1: const pw.FlexColumnWidth(), // عمود "عدد العمال"
-              0: const pw.FlexColumnWidth(), // عمود "المبلغ"
-            },
-          ),
-          pw.SizedBox(height: 30),
-          pw.Divider(),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text(
-                "إجمالي الحضور الشهري: ${monthlyTotalAttendance.toStringAsFixed(1)} يوم",
-              ),
-              pw.Text(
-                "إجمالي المبلغ الشهري: ${monthlyTotalMoney.toStringAsFixed(1)} ج.م",
-                style: pw.TextStyle(
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.blueAccent,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+      );
 
-    final Uint8List pdfBytes = await pdf.save();
-    final directory = await getTemporaryDirectory();
-    final String fileName =
-        "Wosool_Report_${intl.DateFormat('yyyy_MM').format(selectedMonth)}.pdf";
-    final File file = File("${directory.path}/$fileName");
-    await file.writeAsBytes(pdfBytes);
+      final Uint8List pdfBytes = await pdf.save();
+      if (mounted) Navigator.pop(context);
 
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text:
-          'تقرير شهر ${intl.DateFormat('MMMM yyyy', 'ar').format(selectedMonth)}',
-    );
+      if (kIsWeb) {
+        final blob = html.Blob([pdfBytes], 'application/pdf');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        html.AnchorElement(href: url)
+          ..setAttribute("download",
+              "report_${intl.DateFormat('yyyy_MM').format(selectedMonth)}.pdf")
+          ..click();
+        html.Url.revokeObjectUrl(url);
+      } else {
+        final directory = await getTemporaryDirectory();
+        final File file = File("${directory.path}/report.pdf");
+        await file.writeAsBytes(pdfBytes);
+        await Share.shareXFiles([XFile(file.path)]);
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("خطأ: $e")));
+    }
   }
 }

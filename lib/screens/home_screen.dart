@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../models/attendance.dart';
-import '../widgets/custom_app_bar.dart'; // تأكد من المسار الصحيح للـ widget
+import '../widgets/custom_app_bar.dart';
+import '../utils/page_transitions.dart';
+import '../providers/theme_provider.dart';
+import 'reports_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,11 +23,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, Map<String, bool>> currentAttendance = {};
   List<String> temporaryWorkers = [];
   DateTime selectedDate = DateTime.now();
+  String temporaryDriver = "";
 
   void _resetUI() {
     setState(() {
       currentAttendance = {};
       temporaryWorkers = [];
+      temporaryDriver = "";
       selectedDate = DateTime.now();
     });
   }
@@ -32,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text("إضافة عامل مؤقت اليوم", textAlign: TextAlign.center),
         content: TextField(
@@ -65,48 +73,103 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _addTemporaryDriver() {
+    TextEditingController driverCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("إضافة سائق مؤقت اليوم", textAlign: TextAlign.center),
+        content: TextField(
+          controller: driverCtrl,
+          textAlign: TextAlign.right,
+          decoration: const InputDecoration(
+            hintText: "اسم السائق",
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("إلغاء"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (driverCtrl.text.isNotEmpty) {
+                setState(() {
+                  temporaryDriver = driverCtrl.text;
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text("تحديد"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    List<String> permanentWorkers = settingsBox
-        .get('workers', defaultValue: <String>[])
-        .cast<String>();
+    // الحصول على السائق من Provider
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    String currentDriver =
+        temporaryDriver.isNotEmpty ? temporaryDriver : themeProvider.mainDriver;
+
+    List<String> permanentWorkers =
+        settingsBox.get('workers', defaultValue: <String>[]).cast<String>();
     List<String> allWorkers = [...permanentWorkers, ...temporaryWorkers];
     double price = settingsBox.get('tripPrice', defaultValue: 65.0);
 
-    double totalTrips = 0;
+    // حساب العدد الفعلي (0.5 لكل رحلة)
+    double effectiveWorkerCount = 0;
     currentAttendance.forEach((name, status) {
-      if (status["am"] == true) totalTrips += 0.5;
-      if (status["pm"] == true) totalTrips += 0.5;
+      if (status["am"] == true) effectiveWorkerCount += 0.5;
+      if (status["pm"] == true) effectiveWorkerCount += 0.5;
     });
-    double totalMoney = totalTrips * price;
+    double totalMoney = effectiveWorkerCount * price;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      // --- استخدام الـ AppBar المخصص الجديد ---
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: CustomWosoolAppBar(
-        title: "وُصول",
-        leading: IconButton(
-          icon: const Icon(
-            Icons.analytics_outlined,
-            color: Colors.white,
-            size: 28,
+        title: "وُصول", // نرسل String مباشرة لحل المشكلة
+        titleWidget: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
           ),
-          onPressed: () => Navigator.pushNamed(context, '/reports'),
+          child: Text(
+            "السائق: $currentDriver",
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.analytics_outlined,
+              color: Colors.white, size: 28),
+          onPressed: () => Navigator.push(
+            context,
+            PageTransitions.slideTransition(
+                const ReportsScreen(), const RouteSettings(name: '/reports')),
+          ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(
-              Icons.settings_outlined,
-              color: Colors.white,
-              size: 28,
+            icon: const Icon(Icons.settings_outlined,
+                color: Colors.white, size: 28),
+            onPressed: () => Navigator.push(
+              context,
+              PageTransitions.slideTransition(const SettingsScreen(),
+                  const RouteSettings(name: '/settings')),
             ),
-            onPressed: () => Navigator.pushNamed(context, '/settings'),
           ),
         ],
       ),
       body: Column(
         children: [
           _buildDateSelector(),
+          _buildDriverSection(currentDriver),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 20),
@@ -115,20 +178,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 String name = allWorkers[index];
                 bool isTemp = temporaryWorkers.contains(name);
                 currentAttendance.putIfAbsent(
-                  name,
-                  () => {"am": false, "pm": false},
-                );
+                    name, () => {"am": false, "pm": false});
                 return _buildWorkerCard(name, isTemp);
               },
             ),
           ),
-          _buildBottomPanel(totalMoney, totalTrips),
+          _buildBottomPanel(totalMoney, effectiveWorkerCount),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addTemporaryWorker,
         backgroundColor: Colors.orangeAccent,
-        elevation: 4,
         child: const Icon(Icons.person_add_alt_1, color: Colors.white),
       ),
     );
@@ -150,30 +210,66 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(15),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
+              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
             ],
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.calendar_today,
-                color: Color(0xFF4A80F0),
-                size: 18,
-              ),
+              const Icon(Icons.calendar_today,
+                  color: Color(0xFF4A80F0), size: 18),
               const SizedBox(width: 10),
               Text(
                 DateFormat('EEEE, d MMMM yyyy', 'ar').format(selectedDate),
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDriverSection(String currentDriver) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.drive_eta, color: Color(0xFF4A80F0), size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "السائق اليوم: $currentDriver",
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+            IconButton(
+              icon: Icon(
+                temporaryDriver.isEmpty ? Icons.person_add : Icons.clear,
+                color: temporaryDriver.isEmpty
+                    ? const Color(0xFF4A80F0)
+                    : Colors.red,
+                size: 20,
+              ),
+              onPressed: temporaryDriver.isEmpty
+                  ? _addTemporaryDriver
+                  : () => setState(() => temporaryDriver = ""),
+            ),
+          ],
         ),
       ),
     );
@@ -187,10 +283,10 @@ class _HomeScreenState extends State<HomeScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)
         ],
       ),
       child: Row(
@@ -199,72 +295,51 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
+                Text(name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
                 if (isTemp)
-                  const Text(
-                    "عامل مؤقت",
-                    style: TextStyle(color: Colors.orange, fontSize: 11),
-                  ),
+                  const Text("عامل مؤقت",
+                      style: TextStyle(color: Colors.orange, fontSize: 11)),
               ],
             ),
           ),
           _tripButton(
-            "ذهاب",
-            Icons.wb_sunny_outlined,
-            am,
-            Colors.amber.shade700,
-            () => setState(() => currentAttendance[name]!["am"] = !am),
-          ),
+              "ذهاب", Icons.wb_sunny_outlined, am, Colors.amber.shade700, () {
+            setState(() => currentAttendance[name]!["am"] = !am);
+          }),
           const SizedBox(width: 10),
-          _tripButton(
-            "عودة",
-            Icons.nightlight_round_outlined,
-            pm,
-            Colors.indigo.shade700,
-            () => setState(() => currentAttendance[name]!["pm"] = !pm),
-          ),
+          _tripButton("عودة", Icons.nightlight_round_outlined, pm,
+              Colors.indigo.shade700, () {
+            setState(() => currentAttendance[name]!["pm"] = !pm);
+          }),
         ],
       ),
     );
   }
 
-  Widget _tripButton(
-    String label,
-    IconData icon,
-    bool isSelected,
-    Color color,
-    VoidCallback onTap,
-  ) {
+  Widget _tripButton(String label, IconData icon, bool isSelected, Color color,
+      VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? color : Colors.grey.shade100,
+          color: isSelected ? color : Colors.grey.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected ? Colors.white : Colors.grey,
-            ),
+            Icon(icon,
+                size: 16, color: isSelected ? Colors.white : Colors.grey),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-              ),
+                  color: isSelected ? Colors.white : Colors.grey,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -272,13 +347,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildBottomPanel(double totalMoney, double totalTrips) {
+  Widget _buildBottomPanel(double totalMoney, double effectiveCount) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 15, 20, 25),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 15)],
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(35)),
+        boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 15)],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -286,21 +361,14 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                "الإجمالي: $totalTrips رحلة",
-                style: const TextStyle(
-                  fontSize: 15,
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              Text("العدد الفعلي: $effectiveCount عامل",
+                  style: const TextStyle(fontSize: 15, color: Colors.grey)),
               Text(
                 "${totalMoney.toStringAsFixed(1)} جنيه",
                 style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF4A80F0),
-                ),
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF4A80F0)),
               ),
             ],
           ),
@@ -309,20 +377,15 @@ class _HomeScreenState extends State<HomeScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF4A80F0),
               minimumSize: const Size(double.infinity, 55),
-              elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
+                  borderRadius: BorderRadius.circular(18)),
             ),
             onPressed: _saveDailyRecord,
-            child: const Text(
-              "حفظ السجل النهائي",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            child: const Text("حفظ السجل النهائي",
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -350,20 +413,19 @@ class _HomeScreenState extends State<HomeScreen> {
       finalData[name] = val;
     });
 
-    attendanceBox.add(
-      DailyRecord(
-        date: selectedDate,
-        workersStatus: finalData,
-        priceAtTime: settingsBox.get('tripPrice', defaultValue: 65.0),
-      ),
-    );
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+    String driverForToday =
+        temporaryDriver.isNotEmpty ? temporaryDriver : themeProvider.mainDriver;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("تم حفظ السجل بنجاح", textAlign: TextAlign.center),
-        backgroundColor: Colors.green,
-      ),
-    );
+    attendanceBox.add(DailyRecord(
+      date: selectedDate,
+      workersStatus: finalData,
+      priceAtTime: settingsBox.get('tripPrice', defaultValue: 65.0),
+      driverName: driverForToday,
+    ));
+
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("تم الحفظ بنجاح"), backgroundColor: Colors.green));
     _resetUI();
   }
 
@@ -371,17 +433,12 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("تنبيه", textAlign: TextAlign.center),
-        content: const Text(
-          "تم تسجيل حضور لهذا اليوم مسبقاً! يمكنك تعديل السجل من صفحة التقارير.",
-          textAlign: TextAlign.center,
-        ),
+        title: const Text("تنبيه"),
+        content: const Text("تم تسجيل حضور لهذا اليوم مسبقاً!"),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("حسناً"),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("حسناً"))
         ],
       ),
     );

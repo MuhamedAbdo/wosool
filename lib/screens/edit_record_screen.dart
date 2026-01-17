@@ -48,15 +48,26 @@ class _EditRecordScreenState extends State<EditRecordScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-              size: 28,
+          Container(
+            margin: const EdgeInsets.only(left: 16, bottom: 8),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A80F0),
+                minimumSize: const Size(50, 50),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              onPressed: _saveChanges,
+              child: const Icon(
+                Icons.check,
+                color: Colors.white,
+                size: 24,
+              ),
             ),
-            onPressed: _saveChanges,
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: Column(

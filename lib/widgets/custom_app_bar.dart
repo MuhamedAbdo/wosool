@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 
 class CustomWosoolAppBar extends StatelessWidget
     implements PreferredSizeWidget {
-  final String title;
+  final String? title;
   final List<Widget>? actions;
   final Widget? leading;
+  final Widget? titleWidget;
 
   const CustomWosoolAppBar({
     super.key,
-    required this.title,
+    this.title,
     this.actions,
     this.leading,
+    this.titleWidget,
   });
 
   @override
@@ -38,15 +40,18 @@ class CustomWosoolAppBar extends StatelessWidget
             Align(alignment: Alignment.centerRight, child: leading),
             // العنوان في المنتصف تماماً
             Center(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: 'Amiri',
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: titleWidget ??
+                  (title != null
+                      ? Text(
+                          title!,
+                          style: const TextStyle(
+                            fontFamily: 'Amiri',
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : const SizedBox.shrink()),
             ),
             // الأيقونات في الجهة الأخرى (actions)
             Align(

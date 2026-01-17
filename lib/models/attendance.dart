@@ -13,9 +13,13 @@ class DailyRecord extends HiveObject {
   @HiveField(2)
   final double priceAtTime; // السعر وقت تسجيل هذه الرحلة
 
+  @HiveField(3)
+  final String driverName; // اسم السائق لهذا اليوم
+
   DailyRecord({
     required this.date,
     required this.workersStatus,
     required this.priceAtTime,
+    required this.driverName,
   });
 }
