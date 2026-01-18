@@ -24,17 +24,63 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> temporaryWorkers = [];
   DateTime selectedDate = DateTime.now();
   String temporaryDriver = "";
+  bool isDateLocked = false;
 
-  void _resetUI() {
-    setState(() {
-      currentAttendance = {};
-      temporaryWorkers = [];
-      temporaryDriver = "";
-      selectedDate = DateTime.now();
-    });
+  @override
+  void initState() {
+    super.initState();
+    _checkDateLock();
+  }
+
+  // فحص هل التاريخ له سجل محفوظ أم لا
+  void _checkDateLock() {
+    DailyRecord? existingRecord;
+    try {
+      existingRecord = attendanceBox.values.firstWhere(
+        (r) =>
+            r.date.year == selectedDate.year &&
+            r.date.month == selectedDate.month &&
+            r.date.day == selectedDate.day,
+      );
+    } catch (e) {
+      existingRecord = null;
+    }
+
+    if (existingRecord != null) {
+      setState(() {
+        isDateLocked = true;
+        temporaryDriver = existingRecord!.driverName;
+
+        // تحميل حالة الحضور المحفوظة
+        currentAttendance.clear();
+        temporaryWorkers.clear();
+
+        List<String> permanentWorkers =
+            settingsBox.get('workers', defaultValue: <String>[]).cast<String>();
+
+        existingRecord.workersStatus.forEach((name, value) {
+          currentAttendance[name] = {
+            "am": value >= 0.5,
+            "pm": value == 1.0,
+          };
+          // إذا كان العامل غير موجود في القائمة الأساسية، نعتبره مؤقت
+          if (!permanentWorkers.contains(name)) {
+            temporaryWorkers.add(name);
+          }
+        });
+      });
+    } else {
+      setState(() {
+        isDateLocked = false;
+        currentAttendance.clear();
+        temporaryWorkers.clear();
+        temporaryDriver = "";
+      });
+    }
   }
 
   void _addTemporaryWorker() {
+    if (isDateLocked) return;
     TextEditingController tempNameCtrl = TextEditingController();
     showDialog(
       context: context,
@@ -74,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _addTemporaryDriver() {
+    if (isDateLocked) return;
     TextEditingController driverCtrl = TextEditingController();
     showDialog(
       context: context,
@@ -112,17 +159,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // الحصول على السائق من Provider
     final themeProvider = Provider.of<ThemeProvider>(context);
     String currentDriver =
         temporaryDriver.isNotEmpty ? temporaryDriver : themeProvider.mainDriver;
 
     List<String> permanentWorkers =
         settingsBox.get('workers', defaultValue: <String>[]).cast<String>();
-    List<String> allWorkers = [...permanentWorkers, ...temporaryWorkers];
+
+    // في حالة القفل، نعرض فقط العمال الذين تم تسجيلهم فعلياً في ذلك اليوم
+    List<String> allWorkers = isDateLocked
+        ? currentAttendance.keys.toList()
+        : [...permanentWorkers, ...temporaryWorkers];
+
     double price = settingsBox.get('tripPrice', defaultValue: 65.0);
 
-    // حساب العدد الفعلي (0.5 لكل رحلة)
     double effectiveWorkerCount = 0;
     currentAttendance.forEach((name, status) {
       if (status["am"] == true) effectiveWorkerCount += 0.5;
@@ -133,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: CustomWosoolAppBar(
-        title: "وُصول", // نرسل String مباشرة لحل المشكلة
+        title: "وُصول",
         titleWidget: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
@@ -186,11 +236,13 @@ class _HomeScreenState extends State<HomeScreen> {
           _buildBottomPanel(totalMoney, effectiveWorkerCount),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addTemporaryWorker,
-        backgroundColor: Colors.orangeAccent,
-        child: const Icon(Icons.person_add_alt_1, color: Colors.white),
-      ),
+      floatingActionButton: isDateLocked
+          ? null
+          : FloatingActionButton(
+              onPressed: _addTemporaryWorker,
+              backgroundColor: Colors.orangeAccent,
+              child: const Icon(Icons.person_add_alt_1, color: Colors.white),
+            ),
     );
   }
 
@@ -205,7 +257,12 @@ class _HomeScreenState extends State<HomeScreen> {
             firstDate: DateTime(2024),
             lastDate: DateTime(2030),
           );
-          if (picked != null) setState(() => selectedDate = picked);
+          if (picked != null) {
+            setState(() {
+              selectedDate = picked;
+              _checkDateLock();
+            });
+          }
         },
         child: Container(
           padding: const EdgeInsets.all(12),
@@ -227,6 +284,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 style:
                     const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
+              if (isDateLocked) ...[
+                const SizedBox(width: 10),
+                const Icon(Icons.lock, color: Colors.orange, size: 18),
+              ]
             ],
           ),
         ),
@@ -257,18 +318,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
             ),
-            IconButton(
-              icon: Icon(
-                temporaryDriver.isEmpty ? Icons.person_add : Icons.clear,
-                color: temporaryDriver.isEmpty
-                    ? const Color(0xFF4A80F0)
-                    : Colors.red,
-                size: 20,
+            if (!isDateLocked)
+              IconButton(
+                icon: Icon(
+                  temporaryDriver.isEmpty ? Icons.person_add : Icons.clear,
+                  color: temporaryDriver.isEmpty
+                      ? const Color(0xFF4A80F0)
+                      : Colors.red,
+                  size: 20,
+                ),
+                onPressed: temporaryDriver.isEmpty
+                    ? _addTemporaryDriver
+                    : () => setState(() => temporaryDriver = ""),
               ),
-              onPressed: temporaryDriver.isEmpty
-                  ? _addTemporaryDriver
-                  : () => setState(() => temporaryDriver = ""),
-            ),
           ],
         ),
       ),
@@ -276,44 +338,47 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildWorkerCard(String name, bool isTemp) {
-    bool am = currentAttendance[name]!["am"]!;
-    bool pm = currentAttendance[name]!["pm"]!;
+    bool am = currentAttendance[name]?["am"] ?? false;
+    bool pm = currentAttendance[name]?["pm"] ?? false;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16)),
-                if (isTemp)
-                  const Text("عامل مؤقت",
-                      style: TextStyle(color: Colors.orange, fontSize: 11)),
-              ],
+    return Opacity(
+      opacity: isDateLocked ? 0.8 : 1.0,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16)),
+                  if (isTemp)
+                    const Text("عامل مؤقت",
+                        style: TextStyle(color: Colors.orange, fontSize: 11)),
+                ],
+              ),
             ),
-          ),
-          _tripButton(
-              "ذهاب", Icons.wb_sunny_outlined, am, Colors.amber.shade700, () {
-            setState(() => currentAttendance[name]!["am"] = !am);
-          }),
-          const SizedBox(width: 10),
-          _tripButton("عودة", Icons.nightlight_round_outlined, pm,
-              Colors.indigo.shade700, () {
-            setState(() => currentAttendance[name]!["pm"] = !pm);
-          }),
-        ],
+            _tripButton(
+                "ذهاب", Icons.wb_sunny_outlined, am, Colors.amber.shade700, () {
+              setState(() => currentAttendance[name]!["am"] = !am);
+            }),
+            const SizedBox(width: 10),
+            _tripButton("عودة", Icons.nightlight_round_outlined, pm,
+                Colors.indigo.shade700, () {
+              setState(() => currentAttendance[name]!["pm"] = !pm);
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -321,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _tripButton(String label, IconData icon, bool isSelected, Color color,
       VoidCallback onTap) {
     return InkWell(
-      onTap: onTap,
+      onTap: isDateLocked ? null : onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -373,38 +438,45 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const SizedBox(height: 15),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A80F0),
-              minimumSize: const Size(double.infinity, 55),
-              shape: RoundedRectangleBorder(
+          if (isDateLocked)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(18)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green.shade700),
+                  const SizedBox(width: 8),
+                  const Text("السجل محفوظ ومقفل",
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ],
+              ),
+            )
+          else
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A80F0),
+                minimumSize: const Size(double.infinity, 55),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18)),
+              ),
+              onPressed: _saveDailyRecord,
+              child: const Text("حفظ السجل النهائي",
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold)),
             ),
-            onPressed: _saveDailyRecord,
-            child: const Text("حفظ السجل النهائي",
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold)),
-          ),
         ],
       ),
     );
   }
 
   void _saveDailyRecord() {
-    final isDuplicate = attendanceBox.values.any(
-      (r) =>
-          r.date.year == selectedDate.year &&
-          r.date.month == selectedDate.month &&
-          r.date.day == selectedDate.day,
-    );
-
-    if (isDuplicate) {
-      _showDuplicateWarning();
-      return;
-    }
-
     Map<String, double> finalData = {};
     currentAttendance.forEach((name, status) {
       double val = 0;
@@ -426,21 +498,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("تم الحفظ بنجاح"), backgroundColor: Colors.green));
-    _resetUI();
-  }
-
-  void _showDuplicateWarning() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("تنبيه"),
-        content: const Text("تم تسجيل حضور لهذا اليوم مسبقاً!"),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("حسناً"))
-        ],
-      ),
-    );
+    _checkDateLock();
   }
 }

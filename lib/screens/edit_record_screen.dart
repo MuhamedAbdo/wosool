@@ -84,21 +84,54 @@ class _EditRecordScreenState extends State<EditRecordScreen> {
                 color: const Color(0xFF4A80F0).withOpacity(0.2),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Column(
               children: [
-                const Icon(
-                  Icons.edit_calendar,
-                  color: Color(0xFF4A80F0),
-                  size: 20,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.edit_calendar,
+                      color: Color(0xFF4A80F0),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      "سجل يوم: ${record.date.year}-${record.date.month}-${record.date.day}",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Color(0xFF2D3142),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                Text(
-                  "سجل يوم: ${record.date.year}-${record.date.month}-${record.date.day}",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Color(0xFF2D3142),
+                const SizedBox(height: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.drive_eta,
+                        color: Color(0xFF4A80F0),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        "السائق: ${record.driverName}",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Color(0xFF2D3142),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

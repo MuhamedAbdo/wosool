@@ -193,12 +193,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
       double monthlyTotalMoney = 0;
       double monthlyTotalAttendance = 0;
 
+      // Calculate driver commissions
+      Map<String, double> driverCommissions = {};
+
       List<List<String>> tableData = records.map((r) {
         double att = 0;
-        r.workersStatus.values.forEach((v) => att += v);
+        for (var v in r.workersStatus.values) {
+          att += v;
+        }
         double money = att * r.priceAtTime;
         monthlyTotalAttendance += att;
         monthlyTotalMoney += money;
+
+        // Add to driver commissions
+        driverCommissions[r.driverName] =
+            (driverCommissions[r.driverName] ?? 0) + money;
+
         return [
           "${money.toStringAsFixed(1)} ج.م",
           r.driverName,
@@ -245,6 +255,54 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         color: PdfColors.blueAccent)),
               ],
             ),
+            pw.SizedBox(height: 15),
+            // Driver Summary Section
+            if (driverCommissions.isNotEmpty) ...[
+              pw.Container(
+                padding: pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey300),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      "تفصيل حصص السائقين:",
+                      style: pw.TextStyle(
+                        font: ttfBold,
+                        fontSize: 14,
+                        color: PdfColors.blue800,
+                      ),
+                    ),
+                    pw.SizedBox(height: 8),
+                    ...driverCommissions.entries.map(
+                      (entry) => pw.Padding(
+                        padding: pw.EdgeInsets.symmetric(vertical: 2),
+                        child: pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            pw.Text(
+                              entry.key,
+                              style:
+                                  pw.TextStyle(font: ttfRegular, fontSize: 12),
+                            ),
+                            pw.Text(
+                              "${entry.value.toStringAsFixed(1)} ج.م",
+                              style: pw.TextStyle(
+                                font: ttfBold,
+                                fontSize: 12,
+                                color: PdfColors.green700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       );
