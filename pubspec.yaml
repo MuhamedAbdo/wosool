@@ -23,10 +23,13 @@ dependencies:
   # ملفات ومشاركة (تم تحديث الإصدارات)
   share_plus: ^10.1.0
   path_provider: ^2.1.2
+  path: ^1.8.3
+  archive: ^3.6.1
   pdf: ^3.11.1
   printing: ^5.14.0
   change_app_package_name: ^1.5.0
   universal_html: ^2.2.4
+  file_picker: ^10.3.8
 
 dev_dependencies:
   flutter_test:

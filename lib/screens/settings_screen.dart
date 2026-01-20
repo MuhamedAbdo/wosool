@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import '../widgets/custom_app_bar.dart';
 import '../providers/theme_provider.dart';
+import '../utils/backup_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -12,7 +14,8 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final box = Hive.box('settings');
+  late Box box;
+  bool _isBoxInitialized = false;
   final _workerCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
   final _driverCtrl = TextEditingController();
@@ -22,21 +25,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _priceCtrl.text = box.get('tripPrice', defaultValue: 65.0).toString();
-    _driverCtrl.text =
-        Provider.of<ThemeProvider>(context, listen: false).mainDriver;
-    _useTempDriver =
-        Provider.of<ThemeProvider>(context, listen: false).useTempDriver;
-    _tempDriverCtrl.text =
-        Provider.of<ThemeProvider>(context, listen: false).tempDriver;
+    _initBox();
   }
 
-  // دالة لإظهار حوار تعديل الاسم
-  void _showEditDialog(int index, List<String> workers) {
-    TextEditingController editCtrl = TextEditingController(
-      text: workers[index],
-    );
+  Future<void> _initBox() async {
+    try {
+      box = await Hive.openBox('settings');
+      setState(() {
+        _isBoxInitialized = true;
+        // تحميل الإعدادات المحفوظة عند فتح الشاشة
+        _priceCtrl.text = box.get('tripPrice', defaultValue: 65.0).toString();
 
+        final themeProvider =
+            Provider.of<ThemeProvider>(context, listen: false);
+        String savedDriver = themeProvider.mainDriver;
+        _driverCtrl.text = savedDriver == "غير محدد" ? "" : savedDriver;
+
+        _useTempDriver = themeProvider.useTempDriver;
+        _tempDriverCtrl.text = themeProvider.tempDriver;
+      });
+    } catch (e) {
+      print('Error opening settings box: $e');
+      setState(() {
+        _isBoxInitialized = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _workerCtrl.dispose();
+    _priceCtrl.dispose();
+    _driverCtrl.dispose();
+    _tempDriverCtrl.dispose();
+    super.dispose();
+  }
+
+  // دالة تعديل اسم العامل
+  void _showEditDialog(int index, List<String> workers) {
+    TextEditingController editCtrl =
+        TextEditingController(text: workers[index]);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -46,29 +74,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
           controller: editCtrl,
           textAlign: TextAlign.right,
           decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            hintText: "الاسم الجديد",
-          ),
+              border: OutlineInputBorder(), hintText: "الاسم الجديد"),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("إلغاء"),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("إلغاء")),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A80F0),
-            ),
+                backgroundColor: const Color(0xFF4A80F0)),
             onPressed: () {
               if (editCtrl.text.isNotEmpty && editCtrl.text != workers[index]) {
                 setState(() {
-                  // تحديث العنصر في نفس الموقع بدلاً من إضافة جديد
                   workers[index] = editCtrl.text;
-                  box.put('workers', workers);
+                  if (_isBoxInitialized) {
+                    box.put('workers', workers);
+                  }
                 });
                 Navigator.pop(context);
-              } else if (editCtrl.text == workers[index]) {
-                Navigator.pop(context); // لم يتم تغيير الاسم
+              } else {
+                Navigator.pop(context);
               }
             },
             child: const Text("تحديث", style: TextStyle(color: Colors.white)),
@@ -85,20 +110,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: CustomWosoolAppBar(
         title: "الإعدادات",
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new,
-            color: Colors.white,
-            size: 22,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: Colors.white, size: 22),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // قسم المظهر
+            // --- قسم تأمين البيانات (النسخ والاحتياطي) ---
+            _buildSectionCard(
+              title: "تأمين البيانات",
+              icon: Icons.security,
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("نسخة احتياطية محلياً"),
+                    subtitle: const Text("حفظ ملف البيانات على ذاكرة الهاتف"),
+                    leading: const Icon(Icons.backup, color: Colors.blue),
+                    onTap: () async {
+                      // استدعاء الخدمة المحدثة للنسخ
+                      final res = await BackupService.createBackup();
+                      if (res != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(res),
+                          backgroundColor:
+                              res.contains('✅') ? Colors.green : Colors.red,
+                          duration: const Duration(seconds: 3),
+                        ));
+                      }
+                    },
+                  ),
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("استعادة البيانات"),
+                    subtitle: const Text("استرجاع البيانات من ملف سابق"),
+                    leading: const Icon(Icons.restore, color: Colors.orange),
+                    onTap: () async {
+                      bool success = await BackupService.restoreBackup();
+                      if (success) {
+                        _showRestartDialog();
+                      } else {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text(
+                              "❌ لم يتم استعادة أي بيانات أو تم إلغاء العملية"),
+                          backgroundColor: Colors.red,
+                        ));
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 15),
+
+            // --- قسم المظهر ---
             _buildSectionCard(
               title: "المظهر",
               icon: Icons.palette,
@@ -107,31 +177,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   return Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Icon(
-                            themeProvider.isDarkMode
-                                ? Icons.dark_mode
-                                : Icons.light_mode,
-                            color:
-                                Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.white
-                                    : const Color(0xFF4A80F0),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            themeProvider.isDarkMode
-                                ? "الوضع الليلي"
-                                : "الوضع النهاري",
-                            style: TextStyle(
-                              fontWeight: FontWeight.w500,
-                              fontSize: 16,
-                              color:
-                                  Theme.of(context).textTheme.bodyLarge?.color,
-                            ),
-                          ),
-                        ],
-                      ),
+                      Text(themeProvider.isDarkMode
+                          ? "الوضع الليلي"
+                          : "الوضع النهاري"),
                       Switch(
                         value: themeProvider.isDarkMode,
                         onChanged: (value) => themeProvider.toggleTheme(),
@@ -142,361 +190,285 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
             ),
+            const SizedBox(height: 15),
 
-            const SizedBox(height: 20),
-
-            // قسم السائق
+            // --- قسم إعدادات السائق ---
             _buildSectionCard(
               title: "إعدادات السائق",
               icon: Icons.drive_eta,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // السائق الرئيسي
                   TextField(
                     controller: _driverCtrl,
                     textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: Theme.of(context).textTheme.bodyLarge?.color,
-                    ),
                     decoration: InputDecoration(
                       labelText: "اسم السائق الرئيسي",
+                      hintText: "غير محدد",
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      prefixIcon: Icon(Icons.drive_eta,
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? Colors.white
-                              : const Color(0xFF4A80F0)),
+                          borderRadius: BorderRadius.circular(10)),
+                      prefixIcon:
+                          const Icon(Icons.drive_eta, color: Color(0xFF4A80F0)),
                       filled: true,
-                      fillColor:
-                          Theme.of(context).inputDecorationTheme.fillColor,
                     ),
-                    onChanged: (v) =>
-                        box.put('mainDriver', v.isEmpty ? "غير محدد" : v),
                   ),
-                  const SizedBox(height: 15),
-
-                  // خيار السائق المؤقت
+                  const SizedBox(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        "سائق مؤقت لليوم الحالي",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      ),
+                      const Text("سائق مؤقت لليوم"),
                       Switch(
                         value: _useTempDriver,
-                        onChanged: (value) {
-                          setState(() {
-                            _useTempDriver = value;
-                            box.put('useTempDriver', value);
-                          });
-                        },
+                        onChanged: (value) =>
+                            setState(() => _useTempDriver = value),
                         activeThumbColor: const Color(0xFF4A80F0),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-
-                  // حقل إدخال السائق المؤقت
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    child: _useTempDriver
-                        ? TextField(
-                            controller: _tempDriverCtrl,
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              color:
-                                  Theme.of(context).textTheme.bodyLarge?.color,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: "اسم السائق المؤقت",
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              prefixIcon: Icon(Icons.person_add,
-                                  color: Theme.of(context).brightness ==
-                                          Brightness.dark
-                                      ? Colors.orange.shade300
-                                      : Colors.orange),
-                              filled: true,
-                              fillColor: Theme.of(context)
-                                  .inputDecorationTheme
-                                  .fillColor,
-                            ),
-                            onChanged: (v) => box.put('tempDriver', v),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
+                  if (_useTempDriver)
+                    TextField(
+                      controller: _tempDriverCtrl,
+                      textAlign: TextAlign.right,
+                      decoration: InputDecoration(
+                        labelText: "اسم السائق المؤقت",
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                        prefixIcon:
+                            const Icon(Icons.person_add, color: Colors.orange),
+                        filled: true,
+                      ),
+                    ),
                 ],
               ),
             ),
+            const SizedBox(height: 15),
 
-            const SizedBox(height: 20),
-
-            // قسم التكلفة
+            // --- قسم التكلفة ---
             _buildSectionCard(
               title: "إعدادات التكلفة",
               icon: Icons.attach_money,
               child: TextField(
                 controller: _priceCtrl,
                 textAlign: TextAlign.right,
-                style: TextStyle(
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
-                ),
                 decoration: InputDecoration(
                   labelText: "سعر الرحلة (جنيه)",
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  prefixIcon: Icon(Icons.attach_money,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.green.shade300
-                          : Colors.green),
+                      borderRadius: BorderRadius.circular(10)),
+                  prefixIcon:
+                      const Icon(Icons.attach_money, color: Colors.green),
                   filled: true,
-                  fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                 ),
                 keyboardType: TextInputType.number,
-                onChanged: (v) =>
-                    box.put('tripPrice', double.tryParse(v) ?? 65.0),
               ),
             ),
+            const SizedBox(height: 15),
 
-            const SizedBox(height: 20),
-
-            // قسم العمال
+            // --- إدارة العمال ---
             _buildSectionCard(
               title: "إدارة العمال",
               icon: Icons.people,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // إضافة عامل جديد
                   Row(
                     children: [
                       Expanded(
                         child: TextField(
                           controller: _workerCtrl,
                           textAlign: TextAlign.right,
-                          style: TextStyle(
-                            color: Theme.of(context).textTheme.bodyLarge?.color,
-                          ),
                           decoration: InputDecoration(
-                            hintText: "اكتب اسم العامل هنا",
+                            hintText: "اضف عامل جديد",
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                                borderRadius: BorderRadius.circular(10)),
                             filled: true,
-                            fillColor: Theme.of(context)
-                                .inputDecorationTheme
-                                .fillColor,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4A80F0),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 15),
-                        ),
-                        onPressed: () {
+                            backgroundColor: const Color(0xFF4A80F0)),
+                        onPressed: () async {
                           if (_workerCtrl.text.isNotEmpty) {
-                            List<String> workers = box.get('workers',
-                                defaultValue: <String>[]).cast<String>();
-                            workers.add(_workerCtrl.text);
-                            box.put('workers', workers);
-                            _workerCtrl.clear();
-                            setState(() {});
+                            try {
+                              if (_isBoxInitialized) {
+                                List<String> workers = box.get('workers',
+                                    defaultValue: <String>[]).cast<String>();
+                                workers.add(_workerCtrl.text);
+                                box.put('workers', workers);
+                                _workerCtrl.clear();
+                                setState(() {});
+                              }
+                            } catch (e) {
+                              print('Error adding worker: $e');
+                            }
                           }
                         },
                         child: const Icon(Icons.add, color: Colors.white),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 15),
-
-                  // قائمة العمال
+                  const SizedBox(height: 10),
                   Container(
                     constraints: const BoxConstraints(maxHeight: 200),
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: box
-                          .get('workers', defaultValue: <String>[])
-                          .cast<String>()
-                          .length,
+                      itemCount: _isBoxInitialized
+                          ? box
+                              .get('workers', defaultValue: <String>[])
+                              .cast<String>()
+                              .length
+                          : 0,
                       itemBuilder: (context, index) {
-                        List<String> workers = box.get('workers',
-                            defaultValue: <String>[]).cast<String>();
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            title: Text(
-                              workers[index],
-                              style: TextStyle(
-                                fontWeight: FontWeight.w500,
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.color,
+                        try {
+                          if (!_isBoxInitialized) return const SizedBox();
+                          List<String> workers = box.get('workers',
+                              defaultValue: <String>[]).cast<String>();
+                          return Card(
+                            child: ListTile(
+                              title: Text(workers[index]),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                      icon: const Icon(Icons.edit_note,
+                                          color: Colors.blue),
+                                      onPressed: () =>
+                                          _showEditDialog(index, workers)),
+                                  IconButton(
+                                      icon: const Icon(Icons.delete,
+                                          color: Colors.red),
+                                      onPressed: () {
+                                        setState(() {
+                                          workers.removeAt(index);
+                                          if (_isBoxInitialized) {
+                                            try {
+                                              box.put('workers', workers);
+                                            } catch (e) {
+                                              print(
+                                                  'Error removing worker: $e');
+                                            }
+                                          }
+                                        });
+                                      }),
+                                ],
                               ),
                             ),
-                            leading: Icon(
-                              Icons.person_outline,
-                              color: Theme.of(context)
-                                  .iconTheme
-                                  .color
-                                  ?.withOpacity(0.7),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit_note,
-                                      color: Colors.blueAccent),
-                                  onPressed: () =>
-                                      _showEditDialog(index, workers),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_sweep_outlined,
-                                      color: Colors.redAccent),
-                                  onPressed: () {
-                                    setState(() {
-                                      workers.removeAt(index);
-                                      box.put('workers', workers);
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
+                          );
+                        } catch (e) {
+                          print('Error building worker list: $e');
+                          return const SizedBox();
+                        }
                       },
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
 
-            // زر حفظ الإعدادات
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 30),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A80F0),
-                  minimumSize: const Size(double.infinity, 55),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                ),
-                onPressed: _saveSettings,
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.save, color: Colors.white, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      "حفظ الإعدادات",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
+            const SizedBox(height: 25),
+
+            // --- زر الحفظ النهائي ---
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A80F0),
+                minimumSize: const Size(double.infinity, 55),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15)),
               ),
+              onPressed: _saveAndGoHome,
+              child: const Text("حفظ الإعدادات",
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
             ),
+            const SizedBox(height: 40),
           ],
         ),
       ),
     );
   }
 
-  void _saveSettings() {
-    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+  void _saveAndGoHome() {
+    try {
+      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
 
-    // حفظ جميع الإعدادات في الـ Storage
-    themeProvider.updateMainDriver(_driverCtrl.text);
-    themeProvider.updateTempDriver(_tempDriverCtrl.text);
-    themeProvider.updateUseTempDriver(_useTempDriver);
-    box.put('tripPrice', double.tryParse(_priceCtrl.text) ?? 65.0);
+      String driverName = _driverCtrl.text.trim().isEmpty
+          ? "غير محدد"
+          : _driverCtrl.text.trim();
 
-    // إظهار رسالة نجاح
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          "تم حفظ الإعدادات بنجاح",
-          textAlign: TextAlign.center,
+      themeProvider.updateMainDriver(driverName);
+      themeProvider.updateTempDriver(_tempDriverCtrl.text);
+      themeProvider.updateUseTempDriver(_useTempDriver);
+
+      if (_isBoxInitialized) {
+        box.put('tripPrice', double.tryParse(_priceCtrl.text) ?? 65.0);
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("تم الحفظ بنجاح"), backgroundColor: Colors.green));
+
+      // العودة للرئيسية مع تنظيف الـ Stack لمنع ظهور شاشة بيضاء أو الرجوع للـ Splash
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+    } catch (e) {
+      print('Error saving settings: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("❌ حدث خطأ أثناء الحفظ"),
+          backgroundColor: Colors.red,
         ),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(20),
-        duration: Duration(seconds: 2),
+      );
+    }
+  }
+
+  void _showRestartDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: const Text("✅ نجحت الاستعادة",
+            textAlign: TextAlign.center, style: TextStyle(color: Colors.green)),
+        content: const Text(
+            "تم تحديث البيانات بنجاح. يجب إغلاق التطبيق وفتحه يدوياً لتظهر البيانات الجديدة بشكل صحيح."),
+        actions: [
+          Center(
+            child: TextButton(
+                onPressed: () => exit(0),
+                child: const Text("إغلاق التطبيق الآن",
+                    style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16))),
+          ),
+        ],
       ),
     );
   }
 
-  // Helper method to build section cards
-  Widget _buildSectionCard({
-    required String title,
-    required IconData icon,
-    required Widget child,
-  }) {
+  Widget _buildSectionCard(
+      {required String title, required IconData icon, required Widget child}) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  icon,
-                  color: Theme.of(context).iconTheme.color,
-                  size: 20,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white
-                        : const Color(0xFF4A80F0),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 15),
-            child,
-          ],
-        ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(icon, color: const Color(0xFF4A80F0), size: 20),
+            const SizedBox(width: 10),
+            Text(title,
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ]),
+          const SizedBox(height: 15),
+          child,
+        ],
       ),
     );
   }

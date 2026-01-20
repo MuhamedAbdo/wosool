@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -104,9 +103,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
           children: [
             IconButton(
               icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
-              onPressed: () {
-                Navigator.pushNamed(context, '/edit', arguments: record)
-                    .then((_) => setState(() {}));
+              onPressed: () async {
+                await Navigator.pushNamed(context, '/edit', arguments: record);
+                setState(() {});
               },
             ),
             IconButton(
@@ -184,7 +183,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     try {
       final pdf = pw.Document();
-      // تحميل الخط العادي والخط العريض بشكل منفصل
       final fontData = await rootBundle.load("assets/fonts/Amiri-Regular.ttf");
       final boldFontData = await rootBundle.load("assets/fonts/Amiri-Bold.ttf");
       final ttfRegular = pw.Font.ttf(fontData);
@@ -193,25 +191,26 @@ class _ReportsScreenState extends State<ReportsScreen> {
       double monthlyTotalMoney = 0;
       double monthlyTotalAttendance = 0;
 
-      // Calculate driver commissions
-      Map<String, double> driverCommissions = {};
+      // Map لتجميع البيانات لكل سائق
+      Map<String, double> driverTotals = {};
 
       List<List<String>> tableData = records.map((r) {
-        double att = 0;
-        for (var v in r.workersStatus.values) {
-          att += v;
-        }
+        double att = r.workersStatus.values.fold(0.0, (sum, v) => sum + v);
         double money = att * r.priceAtTime;
+
         monthlyTotalAttendance += att;
         monthlyTotalMoney += money;
 
-        // Add to driver commissions
-        driverCommissions[r.driverName] =
-            (driverCommissions[r.driverName] ?? 0) + money;
+        // جلب اسم السائق وتنظيف الفراغات
+        String dName = r.driverName.trim();
+        if (dName.isEmpty) dName = "غير محدد";
+
+        // إضافة المبلغ لحصة السائق في الـ Map
+        driverTotals[dName] = (driverTotals[dName] ?? 0.0) + money;
 
         return [
           "${money.toStringAsFixed(1)} ج.م",
-          r.driverName,
+          dName,
           att.toStringAsFixed(1),
           intl.DateFormat('yyyy/MM/dd').format(r.date),
         ];
@@ -220,7 +219,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          // تعريف الثيم بوجود الخطين العادي والعريض
           theme: pw.ThemeData.withFont(base: ttfRegular, bold: ttfBold),
           textDirection: pw.TextDirection.rtl,
           build: (context) => [
@@ -243,7 +241,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                // تحديد الخط بشكل صريح لكل نص لتجنب المربعات
                 pw.Text(
                     "إجمالي الحضور: ${monthlyTotalAttendance.toStringAsFixed(1)}",
                     style: pw.TextStyle(font: ttfBold, fontSize: 14)),
@@ -256,11 +253,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ],
             ),
             pw.SizedBox(height: 15),
-            // Driver Summary Section
-            if (driverCommissions.isNotEmpty) ...[
+
+            // قسم حصص السائقين المجمع
+            if (driverTotals.isNotEmpty) ...[
               pw.Container(
-                padding: pw.EdgeInsets.all(10),
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(10),
                 decoration: pw.BoxDecoration(
+                  color: PdfColors.grey100,
                   border: pw.Border.all(color: PdfColors.grey300),
                   borderRadius: pw.BorderRadius.circular(8),
                 ),
@@ -268,17 +268,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      "تفصيل حصص السائقين:",
+                      "تفصيل حصص السائقين المستحقة:",
                       style: pw.TextStyle(
                         font: ttfBold,
                         fontSize: 14,
                         color: PdfColors.blue800,
                       ),
                     ),
-                    pw.SizedBox(height: 8),
-                    ...driverCommissions.entries.map(
-                      (entry) => pw.Padding(
-                        padding: pw.EdgeInsets.symmetric(vertical: 2),
+                    pw.SizedBox(height: 5),
+                    pw.Divider(color: PdfColors.grey400, thickness: 0.5),
+                    // تحويل الـ Map entries إلى قائمة من الـ Widgets لعرض كل السائقين
+                    ...driverTotals.entries.map((entry) {
+                      return pw.Padding(
+                        padding: const pw.EdgeInsets.symmetric(vertical: 2),
                         child: pw.Row(
                           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                           children: [
@@ -297,8 +299,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             ),
                           ],
                         ),
-                      ),
-                    ),
+                      );
+                    }).toList(),
                   ],
                 ),
               ),
@@ -326,8 +328,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
       }
     } catch (e) {
       if (mounted) Navigator.pop(context);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("خطأ: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("خطأ: $e")),
+      );
     }
   }
 }

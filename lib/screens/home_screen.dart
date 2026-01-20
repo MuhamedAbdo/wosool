@@ -17,8 +17,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final settingsBox = Hive.box('settings');
-  final attendanceBox = Hive.box<DailyRecord>('attendance');
+  late Box settingsBox;
+  late Box<DailyRecord> attendanceBox;
+  bool _isBoxesInitialized = false;
 
   Map<String, Map<String, bool>> currentAttendance = {};
   List<String> temporaryWorkers = [];
@@ -29,13 +30,30 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _checkDateLock();
+    _initBoxes();
+  }
+
+  Future<void> _initBoxes() async {
+    try {
+      settingsBox = await Hive.openBox('settings');
+      attendanceBox = await Hive.openBox<DailyRecord>('attendance');
+      setState(() {
+        _isBoxesInitialized = true;
+      });
+      _checkDateLock();
+    } catch (e) {
+      print('Error opening boxes: $e');
+      setState(() {
+        _isBoxesInitialized = false;
+      });
+    }
   }
 
   // فحص هل التاريخ له سجل محفوظ أم لا
   void _checkDateLock() {
     DailyRecord? existingRecord;
     try {
+      // البحث عن السجل المطابق للتاريخ المختار بشكل طازج من الصندوق
       existingRecord = attendanceBox.values.firstWhere(
         (r) =>
             r.date.year == selectedDate.year &&
@@ -51,7 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
         isDateLocked = true;
         temporaryDriver = existingRecord!.driverName;
 
-        // تحميل حالة الحضور المحفوظة
         currentAttendance.clear();
         temporaryWorkers.clear();
 
@@ -63,7 +80,6 @@ class _HomeScreenState extends State<HomeScreen> {
             "am": value >= 0.5,
             "pm": value == 1.0,
           };
-          // إذا كان العامل غير موجود في القائمة الأساسية، نعتبره مؤقت
           if (!permanentWorkers.contains(name)) {
             temporaryWorkers.add(name);
           }
@@ -159,6 +175,40 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isBoxesInitialized) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        appBar: CustomWosoolAppBar(
+          title: "وُصول",
+          leading: IconButton(
+            icon: const Icon(Icons.analytics_outlined,
+                color: Colors.white, size: 28),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                PageTransitions.slideTransition(const ReportsScreen(),
+                    const RouteSettings(name: '/reports')),
+              );
+            },
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings_outlined,
+                  color: Colors.white, size: 28),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  PageTransitions.slideTransition(const SettingsScreen(),
+                      const RouteSettings(name: '/settings')),
+                );
+              },
+            ),
+          ],
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final themeProvider = Provider.of<ThemeProvider>(context);
     String currentDriver =
         temporaryDriver.isNotEmpty ? temporaryDriver : themeProvider.mainDriver;
@@ -166,7 +216,6 @@ class _HomeScreenState extends State<HomeScreen> {
     List<String> permanentWorkers =
         settingsBox.get('workers', defaultValue: <String>[]).cast<String>();
 
-    // في حالة القفل، نعرض فقط العمال الذين تم تسجيلهم فعلياً في ذلك اليوم
     List<String> allWorkers = isDateLocked
         ? currentAttendance.keys.toList()
         : [...permanentWorkers, ...temporaryWorkers];
@@ -198,21 +247,31 @@ class _HomeScreenState extends State<HomeScreen> {
         leading: IconButton(
           icon: const Icon(Icons.analytics_outlined,
               color: Colors.white, size: 28),
-          onPressed: () => Navigator.push(
-            context,
-            PageTransitions.slideTransition(
-                const ReportsScreen(), const RouteSettings(name: '/reports')),
-          ),
+          onPressed: () async {
+            // انتظار العودة من صفحة التقارير
+            await Navigator.push(
+              context,
+              PageTransitions.slideTransition(
+                  const ReportsScreen(), const RouteSettings(name: '/reports')),
+            );
+            // تحديث البيانات فور العودة
+            _checkDateLock();
+          },
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined,
                 color: Colors.white, size: 28),
-            onPressed: () => Navigator.push(
-              context,
-              PageTransitions.slideTransition(const SettingsScreen(),
-                  const RouteSettings(name: '/settings')),
-            ),
+            onPressed: () async {
+              // انتظار العودة من صفحة الإعدادات
+              await Navigator.push(
+                context,
+                PageTransitions.slideTransition(const SettingsScreen(),
+                    const RouteSettings(name: '/settings')),
+              );
+              // تحديث البيانات فور العودة (في حال تم تغيير السائق أو السعر أو العمال)
+              _checkDateLock();
+            },
           ),
         ],
       ),

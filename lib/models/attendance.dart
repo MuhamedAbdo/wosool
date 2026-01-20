@@ -22,4 +22,22 @@ class DailyRecord extends HiveObject {
     required this.priceAtTime,
     required this.driverName,
   });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'date': date.toIso8601String(),
+      'workersStatus': workersStatus,
+      'priceAtTime': priceAtTime,
+      'driverName': driverName,
+    };
+  }
+
+  factory DailyRecord.fromJson(Map<String, dynamic> json) {
+    return DailyRecord(
+      date: DateTime.parse(json['date']),
+      workersStatus: Map<String, double>.from(json['workersStatus']),
+      priceAtTime: json['priceAtTime'].toDouble(),
+      driverName: json['driverName'],
+    );
+  }
 }
